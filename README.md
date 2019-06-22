@@ -266,7 +266,10 @@ spring:
     name: hello-spring-cloud-eureka
 ```
 
+ 值得注意的一点:eureka是纯正的 servlet 应用。
+
 ### 创建服务注册中心
+
 ```java
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
