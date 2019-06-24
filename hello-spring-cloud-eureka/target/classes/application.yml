@@ -1,0 +1,15 @@
+spring:
+  application:
+    name: hello-spring-cloud-eureka # 服务注册与发现,是根据名字通过负载均衡来找服务的,所以项目必须有自己的名字!
+
+server:
+  port: 8761
+
+eureka:
+  instance:
+    hostname: localhost
+  client:
+    registerWithEureka: false # 不将eureak注册到别的eureka
+    fetchRegistry: false # 不拉去注册列表
+    serviceUrl:
+      defaultZone: http://${eureka.instance.hostname}:${server.port}/eureka/
