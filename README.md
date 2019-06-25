@@ -1209,3 +1209,1320 @@ public class HystrixDashboardConfiguration {
 - 参数说明：https://github.com/Netflix/Hystrix/wiki/Configuration
 - HystrixProperty 参考代码：http://www.programcreek.com/java-api-examples/index.php?source_dir=Hystrix-master/hystrix-contrib/hystrix-javanica/src/test/java/com/netflix/hystrix/contrib/javanica/test/common/configuration/command/BasicCommandPropertiesTest.java
 
+##使用路由网关统一访问接口
+
+在微服务架构中，需要几个基础的服务治理组件，包括服务注册与发现、服务消费、负载均衡、熔断器、智能路由、配置管理等，由这几个基础组件相互协作，共同组建了一个简单的微服务系统。一个简单的微服务系统如下图：
+
+![1561419209981](assets/1561419209981.png)
+
+在 Spring Cloud 微服务系统中，一种常见的负载均衡方式是，客户端的请求首先经过负载均衡（Zuul、Ngnix），再到达服务网关（Zuul 集群），然后再到具体的服。服务统一注册到高可用的服务注册中心集群，服务的所有的配置文件由配置服务管理，配置服务的配置文件放在 GIT 仓库，方便开发人员随时改配置。
+
+###Zuul 简介
+
+Zuul 的主要功能是路由转发和过滤器。路由功能是微服务的一部分，比如 `/api/user` 转发到到 User 服务，`/api/shop` 转发到到 Shop 服务。Zuul 默认和 Ribbon 结合实现了负载均衡的功能。
+
+###创建路由网关
+
+`pom.xml` 文件如下：
+
+```text
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.funtl</groupId>
+        <artifactId>hello-spring-cloud-dependencies</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../hello-spring-cloud-dependencies/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>hello-spring-cloud-zuul</artifactId>
+    <packaging>jar</packaging>
+
+    <name>hello-spring-cloud-zuul</name>
+    <url>http://www.funtl.com</url>
+    <inceptionYear>2018-Now</inceptionYear>
+
+    <dependencies>
+        <!-- Spring Boot Begin -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-tomcat</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spring Boot End -->
+
+        <!-- Spring Cloud Begin -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-zuul</artifactId>
+        </dependency>
+        <!-- Spring Cloud End -->
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.funtl.hello.spring.cloud.zuul.ZuulApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+主要是增加了 Zuul 的依赖
+
+```text
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-netflix-zuul</artifactId>
+</dependency>
+```
+
+### Application
+
+增加 `@EnableZuulProxy` 注解开启 Zuul 功能
+
+```text
+package com.funtl.hello.spring.cloud.zuul;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+import org.springframework.cloud.netflix.zuul.EnableZuulProxy;
+
+@SpringBootApplication
+@EnableEurekaClient
+@EnableZuulProxy
+public class ZuulApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ZuulApplication.class, args);
+    }
+}
+```
+
+### application.yml
+
+- 设置端口号为：`8769`
+- 增加 Zuul 配置
+
+```text
+spring:
+  application:
+    name: hello-spring-cloud-zuul
+
+server:
+  port: 8769
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+
+zuul:
+  routes:
+    api-a:
+      path: /api/a/**
+      serviceId: hello-spring-cloud-web-admin-ribbon
+    api-b:
+      path: /api/b/**
+      serviceId: hello-spring-cloud-web-admin-feign
+```
+
+路由说明：
+
+- 以 `/api/a` 开头的请求都转发给 `hello-spring-cloud-web-admin-ribbon` 服务
+- 以 `/api/b` 开头的请求都转发给 `hello-spring-cloud-web-admin-feign` 服务
+
+###测试访问
+
+依次运行 `EurekaApplication`、`ServiceAdminApplication`、`WebAdminRibbonApplication`、`WebAdminFeignApplication`、`ZuulApplication`
+
+打开浏览器访问：http://localhost:8769/api/a/hi?message=HelloZuul 浏览器显示
+
+```text
+Hi，your message is :"HelloZuul" i am from port：8763
+```
+
+打开浏览器访问：http://localhost:8769/api/b/hi?message=HelloZuul 浏览器显示
+
+```text
+Hi，your message is :"HelloZuul" i am from port：8763
+```
+
+至此说明 Zuul 的路由功能配置成功
+
+###配置网关路由失败时的回调
+
+```text
+package com.funtl.hello.spring.cloud.zuul.fallback;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.cloud.netflix.zuul.filters.route.FallbackProvider;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.stereotype.Component;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 路由 hello-spring-cloud-web-admin-feign 失败时的回调
+ * <p>Title: WebAdminFeignFallbackProvider</p>
+ * <p>Description: </p>
+ *
+ * @author Lusifer
+ * @version 1.0.0
+ * @date 2018/7/27 6:55
+ */
+@Component
+public class WebAdminFeignFallbackProvider implements FallbackProvider {
+
+    @Override
+    public String getRoute() {
+        // ServiceId，如果需要所有调用都支持回退，则 return "*" 或 return null
+        return "hello-spring-cloud-web-admin-feign";
+    }
+
+    /**
+     * 如果请求服务失败，则返回指定的信息给调用者
+     * @param route
+     * @param cause
+     * @return
+     */
+    @Override
+    public ClientHttpResponse fallbackResponse(String route, Throwable cause) {
+        return new ClientHttpResponse() {
+            /**
+             * 网关向 api 服务请求失败了，但是消费者客户端向网关发起的请求是成功的，
+             * 不应该把 api 的 404,500 等问题抛给客户端
+             * 网关和 api 服务集群对于客户端来说是黑盒
+             * @return
+             * @throws IOException
+             */
+            @Override
+            public HttpStatus getStatusCode() throws IOException {
+                return HttpStatus.OK;
+            }
+
+            @Override
+            public int getRawStatusCode() throws IOException {
+                return HttpStatus.OK.value();
+            }
+
+            @Override
+            public String getStatusText() throws IOException {
+                return HttpStatus.OK.getReasonPhrase();
+            }
+
+            @Override
+            public void close() {
+
+            }
+
+            @Override
+            public InputStream getBody() throws IOException {
+                ObjectMapper objectMapper = new ObjectMapper();
+                Map<String, Object> map = new HashMap<>();
+                map.put("status", 200);
+                map.put("message", "无法连接，请检查您的网络");
+                return new ByteArrayInputStream(objectMapper.writeValueAsString(map).getBytes("UTF-8"));
+            }
+
+            @Override
+            public HttpHeaders getHeaders() {
+                HttpHeaders headers = new HttpHeaders();
+                // 和 getBody 中的内容编码一致
+                headers.setContentType(MediaType.APPLICATION_JSON_UTF8);
+                return headers;
+            }
+        };
+    }
+}
+```
+
+## 使用路由网关的服务过滤功能
+
+Zuul 不仅仅只是路由，还有很多强大的功能，本节演示一下它的服务过滤功能，比如用在安全验证方面。
+
+###创建服务过滤器
+
+继承 `ZuulFilter` 类并在类上增加 `@Component` 注解就可以使用服务过滤功能了，非常简单方便
+
+```text
+package com.funtl.hello.spring.cloud.zuul.filter;
+
+import com.netflix.zuul.ZuulFilter;
+import com.netflix.zuul.context.RequestContext;
+import com.netflix.zuul.exception.ZuulException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
+
+/**
+ * Zuul 的服务过滤演示
+ * <p>Title: LoginFilter</p>
+ * <p>Description: </p>
+ *
+ * @author Lusifer
+ * @version 1.0.0
+ * @date 2018/5/29 22:02
+ */
+@Component
+public class LoginFilter extends ZuulFilter {
+
+    private static final Logger logger = LoggerFactory.getLogger(LoginFilter.class);
+
+    /**
+     * 配置过滤类型，有四种不同生命周期的过滤器类型
+     * 1. pre：路由之前
+     * 2. routing：路由之时
+     * 3. post：路由之后
+     * 4. error：发送错误调用
+     * @return
+     */
+    @Override
+    public String filterType() {
+        return "pre";
+    }
+
+    /**
+     * 配置过滤的顺序
+     * @return
+     */
+    @Override
+    public int filterOrder() {
+        return 0;
+    }
+
+    /**
+     * 配置是否需要过滤：true/需要，false/不需要
+     * @return
+     */
+    @Override
+    public boolean shouldFilter() {
+        return true;
+    }
+
+    /**
+     * 过滤器的具体业务代码
+     * @return
+     * @throws ZuulException
+     */
+    @Override
+    public Object run() throws ZuulException {
+        RequestContext context = RequestContext.getCurrentContext();
+        HttpServletRequest request = context.getRequest();
+        logger.info("{} >>> {}", request.getMethod(), request.getRequestURL().toString());
+        String token = request.getParameter("token");
+        if (token == null) {
+            logger.warn("Token is empty");
+            context.setSendZuulResponse(false);
+            context.setResponseStatusCode(401);
+            try {
+                context.getResponse().getWriter().write("Token is empty");
+            } catch (IOException e) {
+            }
+        } else {
+            logger.info("OK");
+        }
+        return null;
+    }
+}
+```
+
+### filterType
+
+返回一个字符串代表过滤器的类型，在 Zuul 中定义了四种不同生命周期的过滤器类型
+
+- pre：路由之前
+- routing：路由之时
+- post： 路由之后
+- error：发送错误调用
+
+### filterOrder
+
+过滤的顺序
+
+### shouldFilter
+
+是否需要过滤，这里是 `true`，需要过滤
+
+### run
+
+过滤器的具体业务代码
+
+###测试过滤器
+
+浏览器访问：http://localhost:8769/api/a/hi?message=HelloZuul 网页显示
+
+```text
+Token is empty
+```
+
+浏览器访问：http://localhost:8769/api/b/hi?message=HelloZuul&token=123 网页显示
+
+```text
+Hi，your message is :"HelloZuul" i am from port：8763
+```
+
+##分布式配置中心
+
+在分布式系统中，由于服务数量巨多，为了方便服务配置文件统一管理，实时更新，所以需要分布式配置中心组件。在 Spring Cloud 中，有分布式配置中心组件 Spring Cloud Config ，它支持配置服务放在配置服务的内存中（即本地），也支持放在远程 Git 仓库中。在 Spring Cloud Config 组件中，分两个角色，一是 Config Server，二是 Config Client。
+
+### 分布式配置中心服务端
+
+创建一个工程名为 `hello-spring-cloud-config` 的项目，`pom.xml` 配置文件如下：
+
+```reStructuredText
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.funtl</groupId>
+        <artifactId>hello-spring-cloud-dependencies</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../hello-spring-cloud-dependencies/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>hello-spring-cloud-config</artifactId>
+    <packaging>jar</packaging>
+
+    <name>hello-spring-cloud-config</name>
+    <url>http://www.funtl.com</url>
+    <inceptionYear>2018-Now</inceptionYear>
+
+    <dependencies>
+        <!-- Spring Boot Begin -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-tomcat</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spring Boot End -->
+
+        <!-- Spring Cloud Begin -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-config-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+        </dependency>
+        <!-- Spring Cloud End -->
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.funtl.hello.spring.cloud.config.ConfigApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+主要增加了 `spring-cloud-config-server` 依赖
+
+```text
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-config-server</artifactId>
+</dependency>
+```
+
+###Application
+
+通过 `@EnableConfigServer` 注解，开启配置服务器功能
+
+```text
+package com.funtl.hello.spring.cloud.config;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.config.server.EnableConfigServer;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+
+@SpringBootApplication
+@EnableConfigServer
+@EnableEurekaClient
+public class ConfigApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigApplication.class, args);
+    }
+}
+```
+
+###application.yml
+
+增加 Config 相关配置，并设置端口号为：`8888`
+
+```text
+spring:
+  application:
+    name: hello-spring-cloud-config
+  cloud:
+    config:
+      label: master
+      server:
+        git:
+          uri: https://github.com/topsale/spring-cloud-config
+          search-paths: respo
+          username:
+          password:
+
+server:
+  port: 8888
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+```
+
+相关配置说明，如下：
+
+- `spring.cloud.config.label`：配置仓库的分支
+- `spring.cloud.config.server.git.uri`：配置 Git 仓库地址（GitHub、GitLab、码云 ...）
+- `spring.cloud.config.server.git.search-paths`：配置仓库路径（存放配置文件的目录）
+- `spring.cloud.config.server.git.username`：访问 Git 仓库的账号
+- `spring.cloud.config.server.git.password`：访问 Git 仓库的密码
+
+注意事项：
+
+- 如果使用 GitLab 作为仓库的话，`git.uri` 需要在结尾加上 `.git`，GitHub 则不用
+
+###测试
+
+浏览器端访问：http://localhost:8888/config-client/dev/master 显示如下：
+
+```text
+<Environment> 
+  <name>config-client</name>  
+  <profiles> 
+    <profiles>dev</profiles> 
+  </profiles>  
+  <label>master</label>  
+  <version>9646007f931753d7e96a6dcc9ae34838897a91df</version>  
+  <state/>  
+  <propertySources> 
+    <propertySources> 
+      <name>https://github.com/topsale/spring-cloud-config/respo/config-client-dev.yml</name>  
+      <source> 
+        <foo>foo version 1</foo>  
+        <demo.message>Hello Spring Config</demo.message> 
+      </source> 
+    </propertySources> 
+  </propertySources> 
+</Environment>
+```
+
+证明配置服务中心可以从远程程序获取配置信息
+
+###附：HTTP 请求地址和资源文件映射
+
+- http://ip:port/{application}/{profile}[/{label}]
+- http://ip:port/{application}-{profile}.yml
+- http://ip:port/{label}/{application}-{profile}.yml
+- http://ip:port/{application}-{profile}.properties
+- http://ip:port/{label}/{application}-{profile}.properties
+
+## 分布式配置中心客户端
+
+创建一个工程名为 `hello-spring-cloud-config-client` 的项目，`pom.xml` 文件配置如下：
+
+```text
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.funtl</groupId>
+        <artifactId>hello-spring-cloud-dependencies</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../hello-spring-cloud-dependencies/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>hello-spring-cloud-config-client</artifactId>
+    <packaging>jar</packaging>
+
+    <name>hello-spring-cloud-config-client</name>
+    <url>http://www.funtl.com</url>
+    <inceptionYear>2018-Now</inceptionYear>
+
+    <dependencies>
+        <!-- Spring Boot Begin -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-tomcat</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spring Boot End -->
+
+        <!-- Spring Cloud Begin -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+        </dependency>
+        <!-- Spring Cloud End -->
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.funtl.hello.spring.cloud.config.client.ConfigClientApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+主要增加了 `spring-cloud-starter-config` 依赖
+
+```text
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-config</artifactId>
+</dependency>
+```
+
+###Application
+
+入口类没有需要特殊处理的地方，代码如下：
+
+```text
+package com.funtl.hello.spring.cloud.config.client;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+
+@SpringBootApplication
+@EnableDiscoveryClient
+public class ConfigClientApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigClientApplication.class, args);
+    }
+}
+```
+
+###application.yml
+
+增加 Config Client 相关配置，并设置端口号为：`8889`
+
+```text
+spring:
+  application:
+    name: hello-spring-cloud-config-client
+  cloud:
+    config:
+      uri: http://localhost:8888
+      name: config-client
+      label: master
+      profile: dev
+
+server:
+  port: 8889
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+```
+
+相关配置说明，如下：
+
+- `spring.cloud.config.uri`：配置服务中心的网址
+
+- `spring.cloud.config.name`：配置文件名称的前缀
+
+- `spring.cloud.config.label`：配置仓库的分支
+
+- ```
+  spring.cloud.config.profile
+  ```
+
+  ：配置文件的环境标识
+
+  - dev：表示开发环境
+  - test：表示测试环境
+  - prod：表示生产环境
+
+注意事项：
+
+- 配置服务器的默认端口为 `8888`，如果修改了默认端口，则客户端项目就不能在 `application.yml` 或 `application.properties` 中配置 `spring.cloud.config.uri`，必须在 `bootstrap.yml` 或是 `bootstrap.properties` 中配置，原因是 `bootstrap` 开头的配置文件会被优先加载和配置，切记。
+
+###创建测试用 Controller
+
+我们创建一个 Controller 来测试一下通过远程仓库的配置文件注入 `foo` 属性
+
+```text
+package com.funtl.hello.spring.cloud.config.client.controller;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class TestConfigController {
+
+    @Value("${foo}")
+    private String foo;
+
+    @RequestMapping(value = "/hi", method = RequestMethod.GET)
+    public String hi() {
+        return foo;
+    }
+}
+```
+
+一般情况下，能够正常启动服务就说明注入是成功的。
+
+###测试访问
+
+浏览器端访问：http://localhost:8889/hi 显示如下：
+
+```text
+foo version 1
+```
+
+###附：开启 Spring Boot Profile
+
+我们在做项目开发的时候，生产环境和测试环境的一些配置可能会不一样，有时候一些功能也可能会不一样，所以我们可能会在上线的时候手工修改这些配置信息。但是 Spring 中为我们提供了 Profile 这个功能。我们只需要在启动的时候添加一个虚拟机参数，激活自己环境所要用的 Profile 就可以了。
+
+操作起来很简单，只需要为不同的环境编写专门的配置文件，如：`application-dev.yml`、`application-prod.yml`， 启动项目时只需要增加一个命令参数 `--spring.profiles.active=环境配置` 即可，启动命令如下：
+
+```text
+java -jar hello-spring-cloud-web-admin-feign-1.0.0-SNAPSHOT.jar --spring.profiles.active=prod
+```
+
+## Spring Cloud 服务追踪
+
+这篇文章主要讲解服务追踪组件 ZipKin。
+
+###ZipKin 简介
+
+ZipKin 是一个开放源代码的分布式跟踪系统，由 Twitter 公司开源，它致力于收集服务的定时数据，以解决微服务架构中的延迟问题，包括数据的收集、存储、查找和展现。它的理论模型来自于 Google Dapper 论文。
+
+每个服务向 ZipKin 报告计时数据，ZipKin 会根据调用关系通过 ZipKin UI 生成依赖关系图，显示了多少跟踪请求通过每个服务，该系统让开发者可通过一个 Web 前端轻松的收集和分析数据，例如用户每次请求服务的处理时间等，可方便的监测系统中存在的瓶颈。
+
+###服务追踪说明
+
+微服务架构是通过业务来划分服务的，使用 REST 调用。对外暴露的一个接口，可能需要很多个服务协同才能完成这个接口功能，如果链路上任何一个服务出现问题或者网络超时，都会形成导致接口调用失败。随着业务的不断扩张，服务之间互相调用会越来越复杂。
+
+![1561419894040](assets/1561419894040.png)
+
+随着服务的越来越多，对调用链的分析会越来越复杂。它们之间的调用关系也许如下：
+
+![1561419916695](assets/1561419916695.png)
+
+###术语解释
+
+- Span：基本工作单元，例如，在一个新建的 Span 中发送一个 RPC 等同于发送一个回应请求给 RPC，Span 通过一个 64 位 ID 唯一标识，Trace 以另一个 64 位 ID 表示。
+- Trace：一系列 Spans 组成的一个树状结构，例如，如果你正在运行一个分布式大数据工程，你可能需要创建一个 Trace。
+- Annotation：用来即使记录一个事件的存在，一些核心 Annotations 用来定义一个请求的开始和结束
+  - cs：Client Sent，客户端发起一个请求，这个 Annotation 描述了这个 Span 的开始
+  - sr：Server Received，服务端获得请求并准备开始处理它，**如果将其 sr 减去 cs 时间戳便可得到网络延迟**
+  - ss：Server Sent 表明请求处理的完成(当请求返回客户端)，**如果 ss 减去 sr 时间戳便可得到服务端需要的处理请求时间**
+  - cr：Client Received 表明 Span 的结束，客户端成功接收到服务端的回复，**如果 cr 减去 cs 时间戳便可得到客户端从服务端获取回复的所有所需时间**
+
+将 Span 和 Trace 在一个系统中使用 Zipkin 注解的过程图形化：
+
+![1561419944533](assets/1561419944533.png)
+
+###创建 ZipKin 服务端
+
+创建一个工程名为 `hello-spring-cloud-zipkin` 的项目，`pom.xml` 文件如下：
+
+```text
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.funtl</groupId>
+        <artifactId>hello-spring-cloud-dependencies</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../hello-spring-cloud-dependencies/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>hello-spring-cloud-zipkin</artifactId>
+    <packaging>jar</packaging>
+
+    <name>hello-spring-cloud-zipkin</name>
+    <url>http://www.funtl.com</url>
+    <inceptionYear>2018-Now</inceptionYear>
+
+    <dependencies>
+        <!-- Spring Boot Begin -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-tomcat</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spring Boot End -->
+
+        <!-- Spring Cloud Begin -->
+        <dependency>
+            <groupId>io.zipkin.java</groupId>
+            <artifactId>zipkin</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.zipkin.java</groupId>
+            <artifactId>zipkin-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.zipkin.java</groupId>
+            <artifactId>zipkin-autoconfigure-ui</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+        </dependency>
+        <!-- Spring Cloud End -->
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.funtl.hello.spring.cloud.zipkin.ZipKinApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+主要增加了 3 个依赖，`io.zipkin.java:zipkin`、`io.zipkin.java:zipkin-server`、`io.zipkin.java:zipkin-autoconfigure-ui`
+
+```text
+<dependency>
+    <groupId>io.zipkin.java</groupId>
+    <artifactId>zipkin</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.zipkin.java</groupId>
+    <artifactId>zipkin-server</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.zipkin.java</groupId>
+    <artifactId>zipkin-autoconfigure-ui</artifactId>
+</dependency>
+```
+
+注意版本号为：`2.10.1`，这里没写版本号是因为我已将版本号托管到 `dependencies` 项目中
+
+###Application
+
+通过 `@EnableZipkinServer` 注解开启 Zipkin Server 功能
+
+```text
+package com.funtl.hello.spring.cloud.zipkin;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+import zipkin.server.internal.EnableZipkinServer;
+
+@SpringBootApplication
+@EnableEurekaClient
+@EnableZipkinServer
+public class ZipKinApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ZipKinApplication.class, args);
+    }
+}
+```
+
+###application.yml
+
+设置端口号为：`9411`，该端口号为 Zipkin Server 的默认端口号
+
+```text
+spring:
+  application:
+    name: hello-spring-cloud-zipkin
+
+server:
+  port: 9411
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+      
+management:
+  metrics:
+    web:
+      server:
+        auto-time-requests: false
+```
+
+###追踪服务
+
+在 **所有需要被追踪的项目（就当前教程而言，除了 dependencies 项目外都需要被追踪，包括 Eureka Server）** 中增加 `spring-cloud-starter-zipkin` 依赖
+
+```text
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-zipkin</artifactId>
+</dependency>
+```
+
+在这些项目的 `application.yml` 配置文件中增加 Zipkin Server 的地址即可
+
+```text
+spring:
+  zipkin:
+    base-url: http://localhost:9411
+```
+
+###测试追踪
+
+启动全部项目，打开浏览器访问：http://localhost:9411/ 会出现以下界面：
+
+![1561420065938](assets/1561420065938.png)
+
+**刷新之前项目中的全部测试接口（刷多几次）**
+
+点击 `Find a trace`，可以看到具体服务相互调用的数据
+
+![1561420090632](assets/1561420090632.png)
+
+点击 `Dependencies`，可以发现服务的依赖关系
+
+![1561420112306](assets/1561420112306.png)
+
+至此就代表 ZipKin 配置成功
+
+## Spring Boot Admin
+
+随着开发周期的推移，项目会不断变大，切分出的服务也会越来越多，这时一个个的微服务构成了错综复杂的系统。对于各个微服务系统的健康状态、会话数量、并发数、服务资源、延迟等度量信息的收集就成为了一个挑战。Spring Boot Admin 应运而生，它正式基于这些需求开发出的一套功能强大的监控管理系统。
+
+Spring Boot Admin 有两个角色组成，一个是 Spring Boot Admin Server，一个是 Spring Boot Admin Client，本章节将带领大家实现 Spring Boot Admin 的搭建。
+
+###Spring Boot Admin 服务端
+
+###创建 Spring Boot Admin Server
+
+创建一个工程名为 `hello-spring-cloud-admin` 的项目，`pom.xml` 文件如下：
+
+```text
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.funtl</groupId>
+        <artifactId>hello-spring-cloud-dependencies</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../hello-spring-cloud-dependencies/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>hello-spring-cloud-admin</artifactId>
+    <packaging>jar</packaging>
+
+    <name>hello-spring-cloud-admin</name>
+    <url>http://www.funtl.com</url>
+    <inceptionYear>2018-Now</inceptionYear>
+
+    <dependencies>
+        <!-- Spring Boot Begin -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-tomcat</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jolokia</groupId>
+            <artifactId>jolokia-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.codecentric</groupId>
+            <artifactId>spring-boot-admin-starter-server</artifactId>
+        </dependency>
+        <!-- Spring Boot End -->
+
+        <!-- Spring Cloud Begin -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-zipkin</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+        </dependency>
+        <!-- Spring Cloud End -->
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.funtl.hello.spring.cloud.admin.AdminApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+主要增加了 2 个依赖，`org.jolokia:jolokia-core`、`de.codecentric:spring-boot-admin-starter-server`
+
+```text
+<dependency>
+    <groupId>org.jolokia</groupId>
+    <artifactId>jolokia-core</artifactId>
+</dependency>
+<dependency>
+    <groupId>de.codecentric</groupId>
+    <artifactId>spring-boot-admin-starter-server</artifactId>
+</dependency>
+```
+
+其中 `spring-boot-admin-starter-server` 的版本号为：`2.0.0`，这里没写版本号是因为我已将版本号托管到 `dependencies` 项目中
+
+###Application
+
+通过 `@EnableAdminServer` 注解开启 Admin 功能
+
+```text
+package com.funtl.hello.spring.cloud.admin;
+
+import de.codecentric.boot.admin.server.config.EnableAdminServer;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.netflix.eureka.EnableEurekaClient;
+
+@SpringBootApplication
+@EnableEurekaClient
+@EnableAdminServer
+public class AdminApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(AdminApplication.class, args);
+    }
+}
+```
+
+###application.yml
+
+设置端口号为：`8084`
+
+```text
+spring:
+  application:
+    name: hello-spring-cloud-admin
+  zipkin:
+    base-url: http://localhost:9411
+
+server:
+  port: 8084
+
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        # 注意：此处在视频里是 include: ["health", "info"] 但已无效了，请修改
+        include: health,info
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+```
+
+主要增加了 Spring Boot Admin Server 的相关配置
+
+```text
+management:
+  endpoint:
+    health:
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        # 注意：此处在视频里是 include: ["health", "info"] 但已无效了，请修改
+        include: health,info
+```
+
+###测试访问监控中心
+
+打开浏览器访问：http://localhost:8084 会出现以下界面
+
+![1561420682711](assets/1561420682711.png)
+
+###Spring Boot Admin 客户端
+
+###创建 Spring Boot Admin Client
+
+创建一个工程名为 `hello-spring-cloud-admin-client` 的项目，`pom.xml` 文件如下：
+
+```text
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.funtl</groupId>
+        <artifactId>hello-spring-cloud-dependencies</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../hello-spring-cloud-dependencies/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>hello-spring-cloud-admin-client</artifactId>
+    <packaging>jar</packaging>
+
+    <name>hello-spring-cloud-admin-client</name>
+    <url>http://www.funtl.com</url>
+    <inceptionYear>2018-Now</inceptionYear>
+
+    <dependencies>
+        <!-- Spring Boot Begin -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-tomcat</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jolokia</groupId>
+            <artifactId>jolokia-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>de.codecentric</groupId>
+            <artifactId>spring-boot-admin-starter-client</artifactId>
+        </dependency>
+        <!-- Spring Boot End -->
+
+        <!-- Spring Cloud Begin -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-zipkin</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+        </dependency>
+        <!-- Spring Cloud End -->
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.funtl.hello.spring.cloud.admin.client.AdminClientApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+主要增加了 2 个依赖，`org.jolokia:jolokia-core`、`de.codecentric:spring-boot-admin-starter-client`
+
+```text
+<dependency>
+    <groupId>org.jolokia</groupId>
+    <artifactId>jolokia-core</artifactId>
+</dependency>
+<dependency>
+    <groupId>de.codecentric</groupId>
+    <artifactId>spring-boot-admin-starter-client</artifactId>
+</dependency>
+```
+
+其中 `spring-boot-admin-starter-client` 的版本号为：`2.0.0`，这里没写版本号是因为我已将版本号托管到 `dependencies` 项目中
+
+###Application
+
+程序入口类没有特别需要修改的地方
+
+```text
+package com.funtl.hello.spring.cloud.admin.client;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+
+@SpringBootApplication
+@EnableDiscoveryClient
+public class AdminClientApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(AdminClientApplication.class, args);
+    }
+}
+```
+
+###application.yml
+
+设置端口号为：`8085`，并设置 Spring Boot Admin 的服务端地址
+
+```text
+spring:
+  application:
+    name: hello-spring-cloud-admin-client
+  boot:
+    admin:
+      client:
+        url: http://localhost:8084
+  zipkin:
+    base-url: http://localhost:9411
+
+server:
+  port: 8085
+
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+```
+
+主要增加了 Spring Boot Admin Client 相关配置
+
+```text
+spring:
+  boot:
+    admin:
+      client:
+        url: http://localhost:8084
+```
+
+###测试服务监控
+
+依次启动两个应用，打开浏览器访问：http://localhost:8084 界面显示如下
+
+![1561420270731](assets/1561420270731.png)
+
+从图中可以看到，我们的 Admin Client 已经上线了，至此说明监控中心搭建成功
+
+### WallBoard
+
+![1561420306185](assets/1561420306185.png)
+
+### Journal
+

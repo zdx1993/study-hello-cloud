@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 @FeignClient(name = "HELLO-SPRING-CLOUD-SERVICE-ADMIN",fallback = AdminServiceImpl.class)
 public interface AdminService {
     @GetMapping("/hello")
-    //经测试,get方法无需标注@RequestParam,参数也会传递到服务提供者上,但是要记就统一加上@RequestParam比较好
+//    经测试,get方法无需标注@RequestParam,参数也会传递到服务提供者上,但是要记就统一加上@RequestParam比较好
 //    public String sayHelloFegin(String msg);
     public String sayHelloFegin(String msg);
 
