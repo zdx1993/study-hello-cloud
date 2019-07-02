@@ -18,6 +18,12 @@
     <inceptionYear>2018-Now</inceptionYear>
 
     <dependencies>
+        <!--熔断器仪表盘功能 开始-->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-hystrix-dashboard</artifactId>
+        </dependency>
+        <!--熔断器仪表盘功能 结束-->
         <!-- Spring Boot Begin -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
